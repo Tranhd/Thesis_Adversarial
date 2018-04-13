@@ -1,12 +1,15 @@
 import numpy as np
-#import sys
-from cnn import MnistCNN
-#sys.path.append('../Thesis_Utilities/')
-#from utilities import load_datasets
 import tensorflow as tf
 from fgm import fgm
+from deepfool import deepfool
+from jsma import jsma
 import h5py
-#import matplotlib.pyplot as plt
+from cnn_copy import MnistCNN
+
+import matplotlib.pyplot as plt
+import sys
+sys.path.append('../Thesis_Utilities/')
+from utilities import load_datasets
 
 
 def model(x, logits=False):
@@ -28,9 +31,43 @@ def model(x, logits=False):
     else:
         return y
 
-
-def init_adv(variable_scope):
+def init_adv_jsma(variable_scope):
     """
+    Initiates tensors for jsma adversarials
+
+    :param variable_scope: String
+        in which scope the placeholders for adversarial generation, need to be the same as for "network"
+    :return:
+        Placeholders for adversarial examples generation
+    """
+    with tf.variable_scope(variable_scope) as scope:
+        scope.reuse_variables()
+        target = tf.placeholder(tf.int32, (), name='target')
+        adv_epochs = tf.placeholder_with_default(20, shape=(), name='epochs')
+        adv_eps = tf.placeholder_with_default(0.2, shape=(), name='eps')
+        x_jsma = jsma(model, net.inputs, target, eps=adv_eps,
+                          epochs=adv_epochs)
+        return adv_eps, adv_epochs, x_jsma, target
+
+def init_adv_deepfool(variable_scope):
+    """
+    Initiates tensors for deepfool adversarials
+
+    :param variable_scope: String
+        in which scope the placeholders for adversarial generation, need to be the same as for "network"
+    :return:
+        Placeholders for adversarial examples generation
+    """
+    with tf.variable_scope(variable_scope) as scope:
+        scope.reuse_variables()
+        adv_epochs = tf.placeholder(tf.int32, (), name='adv_epochs')
+        x_adv = deepfool(model, net.inputs, epochs=adv_epochs)
+        return adv_epochs, x_adv
+
+def init_adv_fgsm(variable_scope):
+    """
+    Initiates tensors for fsgm adversarials
+
     :param variable_scope: String
         in which scope the placeholders for adversarial generation, need to be the same as for "network"
     :return:
@@ -44,7 +81,76 @@ def init_adv(variable_scope):
         return fgsm_eps, fgsm_epochs, x_fgsm
 
 
-def make_fgmt(sess, x_fgms, fgsm_eps, fgsm_epochs, X_data, epochs, eps, batch_size):
+def make_jsma(sess, x_adv, adv_eps, adv_epochs, target, X_data, epochs, eps, batch_size, n_classes=10):
+    """
+    Generates JSMA adverarial examples from scratch
+
+    :param sess: Tensorflow session
+    :param x_adv: Placeholder
+    :param adv_eps: Placeholder
+    :param adv_epochs: Placeholder
+    :param target: Placeholder
+        target class
+    :param X_data: Numpy array
+        Data to be pertubated
+    :param epochs: int
+        max epochs
+    :param eps: float
+        FGSM parameter, size of pertubation.
+    :param batch_size: int
+        Batch size
+    :return X_adv: numpy array
+        Adversarial examples
+    """
+    print('Making adversarials via JSMA')
+    n_sample = X_data.shape[0]
+    n_batch = int((n_sample + batch_size - 1) / batch_size)
+    X_adv = np.empty_like(X_data)
+    for batch in range(n_batch):
+        start = batch * batch_size
+        end = min(n_sample, start + batch_size)
+        feed_dict = {
+            net.inputs: np.zeros_like(X_data[start:end]),
+            target: np.random.choice(n_classes),
+            adv_epochs: epochs,
+            adv_eps: eps}
+        adv = sess.run(x_adv, feed_dict=feed_dict)
+        X_adv[start:end] = adv
+
+    return X_adv
+
+def make_deepfool(sess, x_adv, adv_epochs, X_data, epochs, batch_size):
+    """
+    Generates deepfool adverarial examples
+
+    :param sess: Tensorflow session
+    :param x_adv: Placeholder
+    :param adv_epochs: Placeholder
+    :param X_data: Numpy array
+            Data to be pertubated
+    :param epochs: int
+        max epochs
+    :param batch_size: int
+        Batch Size
+    :return X_adv: numpy array
+        Adversarial examples
+    """
+    print('Making adversarials via DeepFool')
+
+    n_sample = X_data.shape[0]
+    n_batch = int((n_sample + batch_size - 1) / batch_size)
+    X_adv = np.empty_like(X_data)
+    for batch in range(n_batch):
+        start = batch * batch_size
+        end = min(n_sample, start + batch_size)
+        adv = sess.run(x_adv, feed_dict={net.inputs: X_data[start:end],
+                                            adv_epochs: epochs})
+        X_adv[start:end] = adv
+
+    return X_adv
+
+
+def make_fgsm(sess, x_fgms, fgsm_eps, fgsm_epochs, X_data, epochs, eps, batch_size):
     """
     Generates fast gradient sign method adverarial examples
 
@@ -61,15 +167,13 @@ def make_fgmt(sess, x_fgms, fgsm_eps, fgsm_epochs, X_data, epochs, eps, batch_si
     :param batch_size: int
         Batch size
     :return X_adv: numpy array
-        Adverarial examples
+        Adversarial examples
     """
-    print('\nMaking adversarials via FGSM')
-
+    print('Making adversarials via FGSM')
     n_sample = X_data.shape[0]
     n_batch = int((n_sample + batch_size - 1) / batch_size)
     X_adv = np.empty_like(X_data)
     for batch in range(n_batch):
-        print('batch {0}/{1}'.format(batch + 1, n_batch), end='\r')
         start = batch * batch_size
         end = min(n_sample, start + batch_size)
         adv = sess.run(x_fgms, feed_dict={
@@ -77,13 +181,13 @@ def make_fgmt(sess, x_fgms, fgsm_eps, fgsm_epochs, X_data, epochs, eps, batch_si
             fgsm_eps: eps,
             fgsm_epochs: epochs})
         X_adv[start:end] = adv
-    print()
 
     return X_adv
 
 
-def make_adversarials(sess, net_copy, data, labels, eps=0.01, epochs=10, batch_size=128, seed=1337, filename=None):
+def make_adversarials(sess, net_copy, data, labels, eps=0.01, epochs=3, batch_size=128, seed=1337, filename=None, type='Deepfool', wrong=False):
     """
+    Generates adverarials specified by type.
 
     :param sess: Tensorflow session
     :param net_copy: A copy of the network
@@ -91,31 +195,52 @@ def make_adversarials(sess, net_copy, data, labels, eps=0.01, epochs=10, batch_s
         data to be pertubated
     :param labels: numpy array
         Labels to data
+    :param eps: float
+        Parameter, size of pertubation.
     :param epochs: int
         max epochs
-    :param eps: float
-        FGSM parameter, size of pertubation.
     :param batch_size: int
         Batch size
     :param seed: float
         random seed
     :param filename: String
         Filename is examples is to be saved
+    :param type: String
+        type of adversarial examples
+    :param wrong: Boolean
+        Specifies if the adversarial should be miss-classified by the network to be returned
     :return X_adv: numpy array
-         Adverarial examples that are classified different from their labels
+         Adversarial examples.
+
+    :raises Exception: If no valid type was provided
+    :raises Exception: If no adversarials successfully fooled the network
     """
     np.random.seed(seed)
-    global net
-    net = MnistCNN(sess, save_dir='../Thesis_CNN_mnist/Mnist_save/')
-    fgsm_eps, fgsm_epochs, x_fgsm = init_adv('Predictions')
-    X_adv = make_fgmt(sess, x_fgsm, fgsm_eps, fgsm_epochs, data, epochs, eps, batch_size)
-    adv_predictions, _, _ =  net_copy.predict(X_adv)
-    indexes = (adv_predictions != np.argmax(labels, 1))
+    if 'net' not in globals():
+        global net
+        net = MnistCNN(sess, save_dir='../Thesis_CNN_mnist/Mnist_save/')
+    if type == 'FGSM':
+        fgsm_eps, fgsm_epochs, x_fgsm = init_adv_fgsm('Predictions')
+        X_adv = make_fgsm(sess, x_fgsm, fgsm_eps, fgsm_epochs, data, epochs, eps, batch_size)
+    elif type == 'Deepfool':
+        adv_epochs, x_adv = init_adv_deepfool('Predictions')
+        X_adv = make_deepfool(sess, x_adv, adv_epochs, data, epochs, batch_size)
+    elif type == 'JSMA':
+        adv_eps, adv_epochs, x_adv, target = init_adv_jsma('Predictions')
+        X_adv = make_jsma(sess, x_adv, adv_eps, adv_epochs, target, data, epochs, eps, batch_size, n_classes=10)
+    else:
+        raise Exception('No valid adversarial type, available types is "FGSM", "Deepfool" or "JSMA"')
+    if wrong:
+        adv_predictions, _, _ =  net_copy.predict(X_adv)
+        indexes = (adv_predictions != np.argmax(labels, 1))
+        X_adv = X_adv[indexes]
+        if indexes.sum() == 0: raise Exception('No generated adversarials managed to fool the network')
+        print(f'{len(indexes)-indexes.sum()}/{len(indexes)} adversarials was classified correctly and removed')
     if filename is not None:
         f = h5py.File(filename+'.h5', 'w')
-        f.create_dataset("X_adv", data=X_adv[indexes])
+        f.create_dataset("X_adv", data=X_adv)
         f.close()
-    return X_adv[indexes]
+    return X_adv
 
 
 def fetch_data(filename):
@@ -136,8 +261,8 @@ def fetch_data(filename):
     except:
         print(f'The following file does not exist: {filename}')
 
-"""
 
+"""
 x_train, y_train, x_val, y_val, x_test, y_test = load_datasets(test_size=10000, val_size=5000, omniglot_bool=False,
                                                                name_data_set='data_omni_seed1337.h5', force=False,
                                                                create_file=True, r_seed=123)
@@ -147,15 +272,15 @@ net2 = MnistCNN(sess, save_dir='../Thesis_CNN_mnist/Mnist_save/')
 tf.reset_default_graph()
 sess = tf.Session()
 s = 1337
-X_adv = make_adversarials(sess, net2, x_train[0:9], y_train[0:9], eps=0.01, epochs=20, batch_size=3,
-                          seed=s, filename='adv_'+str(s))
+X_adv = make_adversarials(sess, net2, x_train[0:20], y_train[0:20], eps=0.4, epochs=200, batch_size=1,
+                          seed=s, filename='adv_'+str(s), type='JSMA')
 
 X_adv = fetch_data('adv_'+str(s))
 fig1, axes1 = plt.subplots(figsize=(5, 5), nrows=3, ncols=3, sharex=True, sharey=True, squeeze=False)
 k = 0
 for ax_row in axes1:
     for ax in ax_row:
-        ax.imshow(np.squeeze(X_adv[k,:,:,:]))
+        ax.imshow(np.squeeze(X_adv[k,:,:,:]), cmap='gray')
         label,_,_ = net2.predict(np.expand_dims(X_adv[k,:,:,:],0))
         ax.set_title(f'{label[0]}')
         k = k+1
