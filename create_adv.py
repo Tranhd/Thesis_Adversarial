@@ -6,10 +6,6 @@ from jsma import jsma
 import h5py
 from cnn_copy import MnistCNN
 
-import matplotlib.pyplot as plt
-import sys
-sys.path.append('../Thesis_Utilities/')
-from utilities import load_datasets
 
 
 def model(x, logits=False):
@@ -260,31 +256,3 @@ def fetch_data(filename):
         return X_adv
     except:
         print(f'The following file does not exist: {filename}')
-
-
-"""
-x_train, y_train, x_val, y_val, x_test, y_test = load_datasets(test_size=10000, val_size=5000, omniglot_bool=False,
-                                                               name_data_set='data_omni_seed1337.h5', force=False,
-                                                               create_file=True, r_seed=123)
-tf.reset_default_graph()
-sess = tf.Session()
-net2 = MnistCNN(sess, save_dir='../Thesis_CNN_mnist/Mnist_save/')
-tf.reset_default_graph()
-sess = tf.Session()
-s = 1337
-X_adv = make_adversarials(sess, net2, x_train[0:20], y_train[0:20], eps=0.4, epochs=200, batch_size=1,
-                          seed=s, filename='adv_'+str(s), type='JSMA')
-
-X_adv = fetch_data('adv_'+str(s))
-fig1, axes1 = plt.subplots(figsize=(5, 5), nrows=3, ncols=3, sharex=True, sharey=True, squeeze=False)
-k = 0
-for ax_row in axes1:
-    for ax in ax_row:
-        ax.imshow(np.squeeze(X_adv[k,:,:,:]), cmap='gray')
-        label,_,_ = net2.predict(np.expand_dims(X_adv[k,:,:,:],0))
-        ax.set_title(f'{label[0]}')
-        k = k+1
-plt.suptitle('Adversarial images')
-plt.tight_layout()
-plt.show()
-"""
