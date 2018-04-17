@@ -1,11 +1,11 @@
 import numpy as np
 import tensorflow as tf
+import h5py
+
 from fgm import fgm
 from deepfool import deepfool
 from jsma import jsma
-import h5py
 from cnn_copy import MnistCNN
-
 
 
 def model(x, logits=False):
