@@ -214,7 +214,7 @@ def make_adversarials(sess, net_copy, data, labels, eps=0.01, epochs=3, batch_si
     np.random.seed(seed)
     if 'net' not in globals():
         global net
-        net = MnistCNN(sess, save_dir='../Thesis_CNN_mnist/Mnist_save/')
+        net = MnistCNN(sess, save_dir=net_copy.save_dir)
     if type == 'FGSM':
         fgsm_eps, fgsm_epochs, x_fgsm = init_adv_fgsm('Predictions')
         X_adv = make_fgsm(sess, x_fgsm, fgsm_eps, fgsm_epochs, data, epochs, eps, batch_size)
